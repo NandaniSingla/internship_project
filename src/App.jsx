@@ -215,6 +215,9 @@ const App = () => {
           ))}
         </div>
         <Link to="/compare" className="compare-link">Compare Models</Link>
+        <div>
+          <Link to="/Q&A" className="compare-link">Response Answer</Link>
+        </div>
       </div>
 
       <div className="main">

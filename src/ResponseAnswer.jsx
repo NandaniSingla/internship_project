@@ -3,8 +3,8 @@ import "./App.css";
 import { Configuration, OpenAIApi } from "openai";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { BeatLoader } from "react-spinners";
-
-const responseAnswer = () => {
+import { Link } from "react-router-dom";
+const ResponseAnswer = () => {
   const [formData, setFormData] = useState({
     inputType: "translation", // Default input type
     toLanguage: "Spanish",
@@ -198,99 +198,100 @@ const responseAnswer = () => {
 
   return (
     <div className="container">
-      <h1>AI Translation & QA App</h1>
+        <Link to="/" className="back-link">Back to Translation</Link>
+        <h1>AI Translation & QA App</h1>
 
-      <form onSubmit={(e) => e.preventDefault()}>
-        <div className="input-type">
-          <label>
-            <input
-              type="radio"
-              name="inputType"
-              value="translation"
-              checked={formData.inputType === "translation"}
-              onChange={handleInputChange}
-            />
-            Translation
-          </label>
-          <label>
-            <input
-              type="radio"
-              name="inputType"
-              value="question"
-              checked={formData.inputType === "question"}
-              onChange={handleInputChange}
-            />
-            Question
-          </label>
-        </div>
+        <form onSubmit={(e) => e.preventDefault()}>
+            <div className="input-type">
+            <label>
+                <input
+                type="radio"
+                name="inputType"
+                value="translation"
+                checked={formData.inputType === "translation"}
+                onChange={handleInputChange}
+                />
+                Translation
+            </label>
+            <label>
+                <input
+                type="radio"
+                name="inputType"
+                value="question"
+                checked={formData.inputType === "question"}
+                onChange={handleInputChange}
+                />
+                Question
+            </label>
+            </div>
 
-        <textarea
-          name="message"
-          placeholder={
-            formData.inputType === "translation"
-              ? "Enter text to translate..."
-              : "Enter your question..."
-          }
-          value={formData.message}
-          onChange={handleInputChange}
-        ></textarea>
-
-        {formData.inputType === "translation" && (
-          <select
-            name="toLanguage"
-            value={formData.toLanguage}
+            <textarea
+            name="message"
+            placeholder={
+                formData.inputType === "translation"
+                ? "Enter text to translate..."
+                : "Enter your question..."
+            }
+            value={formData.message}
             onChange={handleInputChange}
-          >
-            {supportedLanguages.deepl.map((lang) => (
-              <option key={lang} value={lang}>
-                {lang}
-              </option>
-            ))}
-          </select>
-        )}
+            ></textarea>
 
-        {error && <div className="error">{error}</div>}
-        <button onClick={handleTranslateOrAnswer}>Submit</button>
-      </form>
+            {formData.inputType === "translation" && (
+            <select
+                name="toLanguage"
+                value={formData.toLanguage}
+                onChange={handleInputChange}
+            >
+                {supportedLanguages.deepl.map((lang) => (
+                <option key={lang} value={lang}>
+                    {lang}
+                </option>
+                ))}
+            </select>
+            )}
 
-      {isLoading ? (
-        <BeatLoader size={12} color={"red"} />
-      ) : (
-        responses.length > 0 && (
-          <table className="response-table">
-            <thead>
-              <tr>
-                <th>Model</th>
-                <th>Type</th>
-                <th>Response</th>
-                <th>Rating (1-10)</th>
-                <th>Rank</th>
-              </tr>
-            </thead>
-            <tbody>
-              {responses.map((response, index) => (
-                <tr key={response.model}>
-                  <td>{response.model}</td>
-                  <td>{response.type}</td>
-                  <td>{response.response}</td>
-                  <td>
-                    <input
-                      type="number"
-                      min="1"
-                      max="10"
-                      value={response.rating || ""}
-                      onChange={(e) => handleRatingChange(index, e.target.value)}
-                    />
-                  </td>
-                  <td>{response.rank || "N/A"}</td>
+            {error && <div className="error">{error}</div>}
+            <button onClick={handleTranslateOrAnswer}>Submit</button>
+        </form>
+
+        {isLoading ? (
+            <BeatLoader size={12} color={"red"} />
+        ) : (
+            responses.length > 0 && (
+            <table className="response-table">
+                <thead>
+                <tr>
+                    <th>Model</th>
+                    <th>Type</th>
+                    <th>Response</th>
+                    <th>Rating (1-10)</th>
+                    <th>Rank</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )
-      )}
+                </thead>
+                <tbody>
+                {responses.map((response, index) => (
+                    <tr key={response.model}>
+                    <td>{response.model}</td>
+                    <td>{response.type}</td>
+                    <td>{response.response}</td>
+                    <td>
+                        <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={response.rating || ""}
+                        onChange={(e) => handleRatingChange(index, e.target.value)}
+                        />
+                    </td>
+                    <td>{response.rank || "N/A"}</td>
+                    </tr>
+                ))}
+                </tbody>
+            </table>
+            )
+        )}
     </div>
   );
 };
 
-export default responseAnswer;
+export default ResponseAnswer;
