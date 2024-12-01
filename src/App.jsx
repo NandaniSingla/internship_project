@@ -26,6 +26,7 @@ const App = () => {
     "gpt-4-turbo",
     "gemini-1.5-flash-002",
     "deepl",
+    "assembly",
   ];
 
   // Expanded list of supported languages
@@ -120,7 +121,30 @@ const App = () => {
           type: formData.inputType === "translation" ? "translation" : "answer",
           response: response.data.choices[0].message.content.trim(),
         };
+      }else if (model === "assembly") {
+        const prompt = formData.inputType === "translation"
+            ? `Translate the text: "${message}" into ${toLang}`
+            : `Answer the question: "${message}"`;
+
+        const response = await fetch("https://cors-anywhere.herokuapp.com/https://api.assemblyai.com/v2/translate", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${import.meta.env.VITE_ASSEMBLY_API_KEY}` // Use your Assembly API key
+            },
+            body: JSON.stringify({
+                prompt: prompt,
+                // Add any additional parameters required by the Assembly API
+            })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          console.error("Error from Assembly API:", data);
+          return `Error fetching response from Assembly: ${data.error || "Unknown error"}`;
       }
+        return data.response; 
+    } 
     } catch (error) {
       console.error(`Error with ${model}:`, error);
       return { type: "error", response: `Error fetching response from ${model}` };
