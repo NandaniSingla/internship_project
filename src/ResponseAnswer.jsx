@@ -1,9 +1,10 @@
 import React, { useState } from "react";
 import "./App.css";
+import { Link } from "react-router-dom";
 import { Configuration, OpenAIApi } from "openai";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { BeatLoader } from "react-spinners";
-import { Link } from "react-router-dom";
+
 const ResponseAnswer = () => {
   const [formData, setFormData] = useState({
     inputType: "translation", // Default input type
@@ -24,7 +25,10 @@ const ResponseAnswer = () => {
     "gpt-3.5-turbo",
     "gpt-4",
     "gpt-4-turbo",
+    "gemini-1.5-pro-001",
+    "gemini-1.5-flash-001",
     "gemini-1.5-flash-002",
+    "gemini-1.5-pro-002",
     "deepl",
     "assembly",
   ];
@@ -107,7 +111,7 @@ const ResponseAnswer = () => {
         });
         const data = await response.json();
         return { type: "translation", response: data.translations[0]?.text || "No response" };
-      } else if (model.startsWith("gpt") || model.startsWith("gemini")) {
+      } else if (model.startsWith("gpt")){
         const prompt =
           formData.inputType === "translation"
             ? `Translate the text: "${message}" into ${toLang}`
@@ -121,7 +125,13 @@ const ResponseAnswer = () => {
           type: formData.inputType === "translation" ? "translation" : "answer",
           response: response.data.choices[0].message.content.trim(),
         };
-      }else if (model === "assembly") {
+      }else if (model.startsWith("gemini")) {
+        const prompt = `Translate the text: "${message}" from English to ${toLang}.`;
+        const genAIModel = googleGenAI.getGenerativeModel({ model });
+        const result = await genAIModel.generateContent(prompt);
+        return { type: "translation", response: result.response.text() };
+      }
+      else if (model === "assembly") {
         const prompt = formData.inputType === "translation"
             ? `Translate the text: "${message}" into ${toLang}`
             : `Answer the question: "${message}"`;
@@ -199,97 +209,102 @@ const ResponseAnswer = () => {
   return (
     <div className="container">
         <Link to="/" className="back-link">Back to Translation</Link>
-        <h1>AI Translation & QA App</h1>
 
-        <form onSubmit={(e) => e.preventDefault()}>
-            <div className="input-type">
-            <label>
-                <input
-                type="radio"
-                name="inputType"
-                value="translation"
-                checked={formData.inputType === "translation"}
-                onChange={handleInputChange}
-                />
-                Translation
-            </label>
-            <label>
-                <input
-                type="radio"
-                name="inputType"
-                value="question"
-                checked={formData.inputType === "question"}
-                onChange={handleInputChange}
-                />
-                Question
-            </label>
-            </div>
+    <div className="container">
+      <h1>AI Translation & QA App</h1>
 
-            <textarea
-            name="message"
-            placeholder={
-                formData.inputType === "translation"
-                ? "Enter text to translate..."
-                : "Enter your question..."
-            }
-            value={formData.message}
+      <form onSubmit={(e) => e.preventDefault()}>
+        <div className="input-type">
+          <label>
+            <input
+              type="radio"
+              name="inputType"
+              value="translation"
+              checked={formData.inputType === "translation"}
+              onChange={handleInputChange}
+            />
+            Translation
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="inputType"
+              value="question"
+              checked={formData.inputType === "question"}
+              onChange={handleInputChange}
+            />
+            Question
+          </label>
+        </div>
+    
+    
+
+        <textarea
+          name="message"
+          placeholder={
+            formData.inputType === "translation"
+              ? "Enter text to translate..."
+              : "Enter your question..."
+          }
+          value={formData.message}
+          onChange={handleInputChange}
+        ></textarea>
+
+        {formData.inputType === "translation" && (
+          <select
+            name="toLanguage"
+            value={formData.toLanguage}
             onChange={handleInputChange}
-            ></textarea>
-
-            {formData.inputType === "translation" && (
-            <select
-                name="toLanguage"
-                value={formData.toLanguage}
-                onChange={handleInputChange}
-            >
-                {supportedLanguages.deepl.map((lang) => (
-                <option key={lang} value={lang}>
-                    {lang}
-                </option>
-                ))}
-            </select>
-            )}
-
-            {error && <div className="error">{error}</div>}
-            <button onClick={handleTranslateOrAnswer}>Submit</button>
-        </form>
-
-        {isLoading ? (
-            <BeatLoader size={12} color={"red"} />
-        ) : (
-            responses.length > 0 && (
-            <table className="response-table">
-                <thead>
-                <tr>
-                    <th>Model</th>
-                    <th>Type</th>
-                    <th>Response</th>
-                    <th>Rating (1-10)</th>
-                    <th>Rank</th>
-                </tr>
-                </thead>
-                <tbody>
-                {responses.map((response, index) => (
-                    <tr key={response.model}>
-                    <td>{response.model}</td>
-                    <td>{response.type}</td>
-                    <td>{response.response}</td>
-                    <td>
-                        <input
-                        type="number"
-                        min="1"
-                        max="10"
-                        value={response.rating || ""}
-                        onChange={(e) => handleRatingChange(index, e.target.value)}
-                        />
-                    </td>
-                    <td>{response.rank || "N/A"}</td>
-                    </tr>
-                ))}
-                </tbody>
-            </table>
-            )
+          >
+            {supportedLanguages.deepl.map((lang) => (
+              <option key={lang} value={lang}>
+                {lang}
+              </option>
+            ))}
+          </select>
         )}
+
+        {error && <div className="error">{error}</div>}
+        <button onClick={handleTranslateOrAnswer}>Submit</button>
+      </form>
+
+      {isLoading ? (
+        <BeatLoader size={12} color={"red"} />
+      ) : (
+        responses.length > 0 && (
+          <table className="response-table">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>Type</th>
+                <th>Response</th>
+                <th>Rating (1-10)</th>
+                <th>Rank</th>
+              </tr>
+            </thead>
+            <tbody>
+              {responses.map((response, index) => (
+                <tr key={response.model}>
+                  <td>{response.model}</td>
+                  <td>{response.type}</td>
+                  <td>{response.response}</td>
+                  <td>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      value={response.rating || ""}
+                      onChange={(e) => handleRatingChange(index, e.target.value)}
+                    />
+                  </td>
+                  <td>{response.rank || "N/A"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )
+      )}
+    </div>
     </div>
   );
 };
