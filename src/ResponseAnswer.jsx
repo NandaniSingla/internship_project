@@ -7,7 +7,7 @@ import { BeatLoader } from "react-spinners";
 
 const ResponseAnswer = () => {
   const [formData, setFormData] = useState({
-    inputType: "translation", // Default input type
+    inputType: "translation",
     toLanguage: "Spanish",
     message: "",
   });
@@ -34,60 +34,34 @@ const ResponseAnswer = () => {
     "assembly",
   ];
 
-  // Expanded list of supported languages
   const supportedLanguages = {
     "deepl": [
-      "Arabic", "Bulgarian", "Chinese (Simplified)", "Chinese (Traditional)", "Czech", "Danish", 
-      "Dutch", "English", "Estonian", "Finnish", "French", "German", "Greek", "Hungarian", 
-      "Indonesian", "Italian", "Japanese", "Korean", "Latvian", "Lithuanian", "Norwegian", 
-      "Polish", "Portuguese", "Romanian", "Russian", "Slovak", "Slovenian", "Spanish", 
+      "Arabic", "Bulgarian", "Chinese (Simplified)", "Chinese (Traditional)", "Czech", "Danish",
+      "Dutch", "English", "Estonian", "Finnish", "French", "German", "Greek", "Hungarian",
+      "Indonesian", "Italian", "Japanese", "Korean", "Latvian", "Lithuanian", "Norwegian",
+      "Polish", "Portuguese", "Romanian", "Russian", "Slovak", "Slovenian", "Spanish",
       "Swedish", "Thai", "Turkish", "Ukrainian", "Vietnamese"
     ],
   };
 
   const deepLLanguageCodes = {
-    "Arabic": "AR",
-    "Bulgarian": "BG",
-    "Chinese (Simplified)": "ZH",
-    "Chinese (Traditional)": "ZH-TW",
-    "Czech": "CS",
-    "Danish": "DA",
-    "Dutch": "NL",
-    "English": "EN",
-    "Estonian": "ET",
-    "Finnish": "FI",
-    "French": "FR",
-    "German": "DE",
-    "Greek": "EL",
-    "Hungarian": "HU",
-    "Indonesian": "ID",
-    "Italian": "IT",
-    "Japanese": "JA",
-    "Korean": "KO",
-    "Latvian": "LV",
-    "Lithuanian": "LT",
-    "Norwegian": "NO",
-    "Polish": "PL",
-    "Portuguese": "PT",
-    "Romanian": "RO",
-    "Russian": "RU",
-    "Slovak": "SK",
-    "Slovenian": "SL",
-    "Spanish": "ES",
-    "Swedish": "SV",
-    "Thai": "TH",
-    "Turkish": "TR",
-    "Ukrainian": "UK",
-    "Vietnamese": "VI",
+    "Arabic": "AR", "Bulgarian": "BG", "Chinese (Simplified)": "ZH",
+    "Chinese (Traditional)": "ZH-TW", "Czech": "CS", "Danish": "DA",
+    "Dutch": "NL", "English": "EN", "Estonian": "ET", "Finnish": "FI",
+    "French": "FR", "German": "DE", "Greek": "EL", "Hungarian": "HU",
+    "Indonesian": "ID", "Italian": "IT", "Japanese": "JA", "Korean": "KO",
+    "Latvian": "LV", "Lithuanian": "LT", "Norwegian": "NO", "Polish": "PL",
+    "Portuguese": "PT", "Romanian": "RO", "Russian": "RU", "Slovak": "SK",
+    "Slovenian": "SL", "Spanish": "ES", "Swedish": "SV", "Thai": "TH",
+    "Turkish": "TR", "Ukrainian": "UK", "Vietnamese": "VI",
   };
 
   useEffect(() => {
-    // Set up speech recognition
     if (window.SpeechRecognition || window.webkitSpeechRecognition) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       const recognitionInstance = new SpeechRecognition();
       recognitionInstance.interimResults = false;
-      recognitionInstance.lang = 'en-US'; // Set the language as needed
+      recognitionInstance.lang = "en-US";
 
       recognitionInstance.onresult = (event) => {
         const transcript = event.results[0][0].transcript;
@@ -110,109 +84,100 @@ const ResponseAnswer = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     setError("");
   };
+
   const translateOrAnswer = async (model, message, toLang) => {
     try {
       if (model === "deepl") {
-        // DeepL does not support question answering
-        return { type: "translation", response: "DeepL does not support question answering." };
+        const targetLangCode = deepLLanguageCodes[toLang];
+        if (!targetLangCode) {
+          return { type: "error", response: `Unsupported language for DeepL: ${toLang}` };
+        }
+
+        const response = await fetch("https://api-free.deepl.com/v2/translate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: new URLSearchParams({
+            auth_key: import.meta.env.VITE_DEEPL_API_KEY,
+            text: message,
+            source_lang: "EN",
+            target_lang: targetLangCode,
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok || !data.translations) {
+          return { type: "error", response: `DeepL API Error: ${data.message || "Unknown error"}` };
+        }
+
+        return { type: "translation", response: data.translations[0]?.text || "No response" };
       }
-  
+
+      if (model === "assembly") {
+        const proxyUrl = "https://cors-anywhere.herokuapp.com/";
+        const assemblyApiUrl = `${proxyUrl}https://api.assemblyai.com/v2/translate`;
+
+        const response = await fetch(assemblyApiUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${import.meta.env.VITE_ASSEMBLY_API_KEY}`,
+          },
+          body: JSON.stringify({
+            prompt: formData.inputType === "translation"
+              ? `Translate the text: "${message}" into ${toLang}`
+              : `Answer the question: "${message}"`,
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          return { type: "error", response: `Assembly API Error: ${data.error || "Unknown error"}` };
+        }
+
+        return { type: formData.inputType, response: data.response };
+      }
+
       const prompt =
         formData.inputType === "translation"
           ? `Translate the text: "${message}" into ${toLang}`
-          : `Answer the question: "${message}" in ${toLang}`;
-  
-      const api = model.startsWith("gpt") ? openai : googleGenAI;
-  
-      // If the model is a Gemini model, adjust the prompt accordingly
+          : `Answer the question: "${message}"`;
+
       if (model.startsWith("gemini")) {
         const genAIModel = googleGenAI.getGenerativeModel({ model });
         const result = await genAIModel.generateContent(prompt);
-        return { type: formData.inputType === "translation" ? "translation" : "answer", response: result.response.text() };
+        return { type: formData.inputType, response: result.response.text() };
       }
-  
-      const response = await api.createChatCompletion({
-        model,
-        messages: [{ role: "user", content: prompt }],
-      });
-  
-      return {
-        type: formData.inputType === "translation" ? "translation" : "answer",
-        response: response.data.choices[0].message.content.trim(),
-      };
+
+      if (model.startsWith("gpt")) {
+        const response = await openai.createChatCompletion({
+          model,
+          messages: [{ role: "user", content: prompt }],
+        });
+
+        return {
+          type: formData.inputType,
+          response: response.data.choices[0].message.content.trim(),
+        };
+      }
+
+      return { type: "error", response: "Unsupported model" };
     } catch (error) {
-      console.error(`Error with ${model}:`, error);
-      return { type: "error", response: `Error fetching response from ${model}` };
+      console.error(`Error with ${model}:`, error.message);
+      return { type: "error", response: `Error with ${model}: ${error.message}` };
     }
   };
 
-  // const translateOrAnswer = async (model, message, toLang) => {
-  //   try {
-  //     if (model === "deepl") {
-  //       if (formData.inputType === "question") {
-  //         return { type: "translation", response: "DeepL does not support question answering." };
-  //       }
-  //       const targetLangCode = deepLLanguageCodes[toLang];
-  //       const response = await fetch("https://api-free.deepl.com/v2/translate", {
-  //         method: "POST",
-  //         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-  //         body: new URLSearchParams({
-  //           auth_key: import.meta.env.VITE_DEEPL_API_KEY,
-  //           text: message,
-  //           source_lang: "EN",
-  //           target_lang: targetLangCode,
-  //         }),
-  //       });
-  //       const data = await response.json();
-  //       return { type: "translation", response: data.translations[0]?.text || "No response" };
-  //     } else if (model.startsWith("gpt")) {
-  //       const prompt =
-  //         formData.inputType === "translation"
-  //           ? `Translate the text: "${message}" into ${toLang}`
-  //           : `Answer the question: "${message}"`;
-  //       const api = model.startsWith("gpt") ? openai : googleGenAI;
-  //       const response = await api.createChatCompletion({
-  //         model,
-  //         messages: [{ role: "user", content: prompt }],
-  //       });
-  //       return {
-  //         type: formData.inputType === "translation" ? "translation" : "answer",
-  //         response: response.data.choices[0].message.content.trim(),
-  //       };
-  //     } else if (model.startsWith("gemini")) {
-  //       const prompt = `Translate the text: "${message}" from English to ${toLang}.`;
-  //       const genAIModel = googleGenAI.getGenerativeModel({ model });
-  //       const result = await genAIModel.generateContent(prompt);
-  //       return { type: "translation", response: result.response.text() };
-  //     } else if (model === "assembly") {
-  //       const prompt = formData.inputType === "translation"
-  //         ? `Translate the text: "${message}" into ${toLang}`
-  //         : `Answer the question: "${message}"`;
+  const handleRatingChange = (index, value) => {
+    const updatedResponses = [...responses];
+    updatedResponses[index].rating = parseInt(value, 10) || null;
 
-  //       const response = await fetch("https://cors-anywhere.herokuapp.com/https://api.assemblyai.com/v2/translate", {
-  //         method: "POST",
-  //         headers: {
-  //           "Content-Type": "application/json",
-  //           "Authorization": `Bearer ${import.meta.env.VITE_ASSEMBLY_API_KEY}`, // Use your Assembly API key
-  //         },
-  //         body: JSON.stringify({
-  //           prompt: prompt,
-  //           // Add any additional parameters required by the Assembly API
-  //         })
-  //       });
+    const rankedResponses = [...updatedResponses].sort((a, b) => (b.rating || 0) - (a.rating || 0));
+    rankedResponses.forEach((res, idx) => (res.rank = idx + 1));
 
-  //       const data = await response.json();
-  //       if (!response.ok) {
-  //         console.error("Error from Assembly API:", data);
-  //         return { type: "error", response: `Error fetching response from Assembly: ${data.error || "Unknown error"}` };
-  //       }
-  //       return { type: "translation", response: data.response };
-  //     }
-  //   } catch (error) {
-  //     console.error(`Error with ${model}:`, error);
-  //     return { type: "error", response: `Error fetching response from ${model}` };
-  //   }
-  // };
+    setResponses(rankedResponses);
+  };
 
   const handleTranslateOrAnswer = async () => {
     const { inputType, toLanguage, message } = formData;
@@ -241,22 +206,11 @@ const ResponseAnswer = () => {
 
       setResponses(formattedResponses);
     } catch (error) {
-      console.error("Error processing request:", error);
+      console.error("Error processing request:", error.message);
       setError("An error occurred while processing your request.");
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleRatingChange = (index, value) => {
-    const updatedResponses = [...responses];
-    updatedResponses[index].rating = parseInt(value, 10) || null;
-
-    // Recalculate ranks based on ratings
-    const rankedResponses = [...updatedResponses].sort((a, b) => (b.rating || 0) - (a.rating || 0));
-    rankedResponses.forEach((res, idx) => (res.rank = idx + 1));
-
-    setResponses(rankedResponses);
   };
 
   const startListening = () => {
@@ -308,11 +262,11 @@ const ResponseAnswer = () => {
               ? "Enter text to translate..."
               : "Enter your question..."
           }
- value={formData.message}
+          value={formData.message}
           onChange={handleInputChange}
         ></textarea>
-        {/* {formData.inputType === "translation" && ( */}
-        { (
+
+        {formData.inputType === "translation" && (
           <select
             name="toLanguage"
             value={formData.toLanguage}
@@ -352,7 +306,7 @@ const ResponseAnswer = () => {
             </thead>
             <tbody>
               {responses.map((response, index) => (
-                <tr key={response.model}>
+                <tr key={index}>
                   <td>{response.model}</td>
                   <td>{response.type}</td>
                   <td>{response.response}</td>

@@ -3,12 +3,9 @@ import "./App.css";
 import { Configuration, OpenAIApi } from "openai";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { BeatLoader } from "react-spinners";
-import { createClient } from "@supabase/supabase-js";
+import axios from "axios"; // Import Axios
 import { Link } from 'react-router-dom';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL; 
-const supabaseKey = import.meta.env.VITE_SUPABASE_KEY; 
-const supabase = createClient(supabaseUrl, supabaseKey);
 
 const App = () => {
   const [formData, setFormData] = useState({
@@ -102,30 +99,28 @@ const App = () => {
   };
 
   const handleTranslationSave = async (original, translated, language, model) => {
-    const { data, error } = await supabase
-      .from("translations")
-      .insert([{ original_message: original, translated_message: translated, language, model }]);
-
-    if (error) {
+    try {
+      const response = await axios.post('https://your-backend-url/api/translations', {
+        original_message: original,
+        translated_message: translated,
+        language,
+        model,
+      });
+      console.log("Translation saved:", response.data);
+    } catch (error) {
       console.error("Error saving translation:", error);
-    } else {
-      console.log("Translation saved:", data);
     }
   };
 
   const fetchPreviousTranslations = async () => {
-    const { data, error } = await supabase
-      .from("translations")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(5);
-
-    if (error) {
+    try {
+      const response = await axios.get('https://your-backend-url/api/translations');
+      setPreviousTranslations(response.data);
+    } catch (error) {
       console.error("Error fetching translations:", error);
-    } else {
-      setPreviousTranslations(data);
     }
   };
+  
 
   useEffect(() => {
     fetchPreviousTranslations();
