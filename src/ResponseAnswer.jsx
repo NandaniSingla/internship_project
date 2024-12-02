@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import "./App.css";
 import { Link } from "react-router-dom";
 import { Configuration, OpenAIApi } from "openai";
@@ -14,6 +14,7 @@ const ResponseAnswer = () => {
   const [responses, setResponses] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [recognition, setRecognition] = useState(null);
 
   const googleGenAI = new GoogleGenerativeAI(import.meta.env.VITE_GOOGLE_API_KEY);
   const configuration = new Configuration({
@@ -36,13 +37,6 @@ const ResponseAnswer = () => {
   // Expanded list of supported languages
   const supportedLanguages = {
     "deepl": [
-      "Arabic", "Bulgarian", "Chinese (Simplified)", "Chinese (Traditional)", "Czech", "Danish", 
-      "Dutch", "English", "Estonian", "Finnish", "French", "German", "Greek", "Hungarian", 
-      "Indonesian", "Italian", "Japanese", "Korean", "Latvian", "Lithuanian", "Norwegian", 
-      "Polish", "Portuguese", "Romanian", "Russian", "Slovak", "Slovenian", "Spanish", 
-      "Swedish", "Thai", "Turkish", "Ukrainian", "Vietnamese"
-    ],
-    "default": [
       "Arabic", "Bulgarian", "Chinese (Simplified)", "Chinese (Traditional)", "Czech", "Danish", 
       "Dutch", "English", "Estonian", "Finnish", "French", "German", "Greek", "Hungarian", 
       "Indonesian", "Italian", "Japanese", "Korean", "Latvian", "Lithuanian", "Norwegian", 
@@ -87,79 +81,138 @@ const ResponseAnswer = () => {
     "Vietnamese": "VI",
   };
 
+  useEffect(() => {
+    // Set up speech recognition
+    if (window.SpeechRecognition || window.webkitSpeechRecognition) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const recognitionInstance = new SpeechRecognition();
+      recognitionInstance.interimResults = false;
+      recognitionInstance.lang = 'en-US'; // Set the language as needed
+
+      recognitionInstance.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setFormData({ ...formData, message: transcript });
+      };
+
+      recognitionInstance.onerror = (event) => {
+        console.error("Speech recognition error:", event.error);
+        setError("Error recognizing speech. Please try again.");
+      };
+
+      setRecognition(recognitionInstance);
+    } else {
+      console.error("Speech recognition not supported in this browser.");
+      setError("Speech recognition is not supported in this browser.");
+    }
+  }, []);
+
   const handleInputChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     setError("");
   };
-
   const translateOrAnswer = async (model, message, toLang) => {
     try {
       if (model === "deepl") {
-        if (formData.inputType === "question") {
-          return { type: "translation", response: "DeepL does not support question answering." };
-        }
-        const targetLangCode = deepLLanguageCodes[toLang];
-        const response = await fetch("https://api-free.deepl.com/v2/translate", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            auth_key: import.meta.env.VITE_DEEPL_API_KEY,
-            text: message,
-            source_lang: "EN",
-            target_lang: targetLangCode,
-          }),
-        });
-        const data = await response.json();
-        return { type: "translation", response: data.translations[0]?.text || "No response" };
-      } else if (model.startsWith("gpt")){
-        const prompt =
-          formData.inputType === "translation"
-            ? `Translate the text: "${message}" into ${toLang}`
-            : `Answer the question: "${message}"`;
-        const api = model.startsWith("gpt") ? openai : googleGenAI;
-        const response = await api.createChatCompletion({
-          model,
-          messages: [{ role: "user", content: prompt }],
-        });
-        return {
-          type: formData.inputType === "translation" ? "translation" : "answer",
-          response: response.data.choices[0].message.content.trim(),
-        };
-      }else if (model.startsWith("gemini")) {
-        const prompt = `Translate the text: "${message}" from English to ${toLang}.`;
+        // DeepL does not support question answering
+        return { type: "translation", response: "DeepL does not support question answering." };
+      }
+  
+      const prompt =
+        formData.inputType === "translation"
+          ? `Translate the text: "${message}" into ${toLang}`
+          : `Answer the question: "${message}" in ${toLang}`;
+  
+      const api = model.startsWith("gpt") ? openai : googleGenAI;
+  
+      // If the model is a Gemini model, adjust the prompt accordingly
+      if (model.startsWith("gemini")) {
         const genAIModel = googleGenAI.getGenerativeModel({ model });
         const result = await genAIModel.generateContent(prompt);
-        return { type: "translation", response: result.response.text() };
+        return { type: formData.inputType === "translation" ? "translation" : "answer", response: result.response.text() };
       }
-      else if (model === "assembly") {
-        const prompt = formData.inputType === "translation"
-            ? `Translate the text: "${message}" into ${toLang}`
-            : `Answer the question: "${message}"`;
-
-        const response = await fetch("https://cors-anywhere.herokuapp.com/https://api.assemblyai.com/v2/translate", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${import.meta.env.VITE_ASSEMBLY_API_KEY}` // Use your Assembly API key
-            },
-            body: JSON.stringify({
-                prompt: prompt,
-                // Add any additional parameters required by the Assembly API
-            })
-        });
-
-        const data = await response.json();
-        if (!response.ok) {
-          console.error("Error from Assembly API:", data);
-          return `Error fetching response from Assembly: ${data.error || "Unknown error"}`;
-      }
-        return data.response; 
-    } 
+  
+      const response = await api.createChatCompletion({
+        model,
+        messages: [{ role: "user", content: prompt }],
+      });
+  
+      return {
+        type: formData.inputType === "translation" ? "translation" : "answer",
+        response: response.data.choices[0].message.content.trim(),
+      };
     } catch (error) {
       console.error(`Error with ${model}:`, error);
       return { type: "error", response: `Error fetching response from ${model}` };
     }
   };
+
+  // const translateOrAnswer = async (model, message, toLang) => {
+  //   try {
+  //     if (model === "deepl") {
+  //       if (formData.inputType === "question") {
+  //         return { type: "translation", response: "DeepL does not support question answering." };
+  //       }
+  //       const targetLangCode = deepLLanguageCodes[toLang];
+  //       const response = await fetch("https://api-free.deepl.com/v2/translate", {
+  //         method: "POST",
+  //         headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  //         body: new URLSearchParams({
+  //           auth_key: import.meta.env.VITE_DEEPL_API_KEY,
+  //           text: message,
+  //           source_lang: "EN",
+  //           target_lang: targetLangCode,
+  //         }),
+  //       });
+  //       const data = await response.json();
+  //       return { type: "translation", response: data.translations[0]?.text || "No response" };
+  //     } else if (model.startsWith("gpt")) {
+  //       const prompt =
+  //         formData.inputType === "translation"
+  //           ? `Translate the text: "${message}" into ${toLang}`
+  //           : `Answer the question: "${message}"`;
+  //       const api = model.startsWith("gpt") ? openai : googleGenAI;
+  //       const response = await api.createChatCompletion({
+  //         model,
+  //         messages: [{ role: "user", content: prompt }],
+  //       });
+  //       return {
+  //         type: formData.inputType === "translation" ? "translation" : "answer",
+  //         response: response.data.choices[0].message.content.trim(),
+  //       };
+  //     } else if (model.startsWith("gemini")) {
+  //       const prompt = `Translate the text: "${message}" from English to ${toLang}.`;
+  //       const genAIModel = googleGenAI.getGenerativeModel({ model });
+  //       const result = await genAIModel.generateContent(prompt);
+  //       return { type: "translation", response: result.response.text() };
+  //     } else if (model === "assembly") {
+  //       const prompt = formData.inputType === "translation"
+  //         ? `Translate the text: "${message}" into ${toLang}`
+  //         : `Answer the question: "${message}"`;
+
+  //       const response = await fetch("https://cors-anywhere.herokuapp.com/https://api.assemblyai.com/v2/translate", {
+  //         method: "POST",
+  //         headers: {
+  //           "Content-Type": "application/json",
+  //           "Authorization": `Bearer ${import.meta.env.VITE_ASSEMBLY_API_KEY}`, // Use your Assembly API key
+  //         },
+  //         body: JSON.stringify({
+  //           prompt: prompt,
+  //           // Add any additional parameters required by the Assembly API
+  //         })
+  //       });
+
+  //       const data = await response.json();
+  //       if (!response.ok) {
+  //         console.error("Error from Assembly API:", data);
+  //         return { type: "error", response: `Error fetching response from Assembly: ${data.error || "Unknown error"}` };
+  //       }
+  //       return { type: "translation", response: data.response };
+  //     }
+  //   } catch (error) {
+  //     console.error(`Error with ${model}:`, error);
+  //     return { type: "error", response: `Error fetching response from ${model}` };
+  //   }
+  // };
 
   const handleTranslateOrAnswer = async () => {
     const { inputType, toLanguage, message } = formData;
@@ -182,8 +235,8 @@ const ResponseAnswer = () => {
         model: m,
         type: results[i]?.type,
         response: results[i]?.response,
-        rating: null, // Initialize rating
-        rank: null, // Initialize rank
+        rating: null,
+        rank: null,
       }));
 
       setResponses(formattedResponses);
@@ -206,11 +259,22 @@ const ResponseAnswer = () => {
     setResponses(rankedResponses);
   };
 
+  const startListening = () => {
+    if (recognition) {
+      recognition.start();
+    }
+  };
+
+  const stopListening = () => {
+    if (recognition) {
+      recognition.stop();
+    }
+  };
+
   return (
     <div className="container">
-        <Link to="/" className="back-link">Back to Translation</Link>
+      <Link to="/" className="back-link">Back to Translation</Link>
 
-    <div className="container">
       <h1>AI Translation & QA App</h1>
 
       <form onSubmit={(e) => e.preventDefault()}>
@@ -236,8 +300,6 @@ const ResponseAnswer = () => {
             Question
           </label>
         </div>
-    
-    
 
         <textarea
           name="message"
@@ -246,11 +308,11 @@ const ResponseAnswer = () => {
               ? "Enter text to translate..."
               : "Enter your question..."
           }
-          value={formData.message}
+ value={formData.message}
           onChange={handleInputChange}
         ></textarea>
-
-        {formData.inputType === "translation" && (
+        {/* {formData.inputType === "translation" && ( */}
+        { (
           <select
             name="toLanguage"
             value={formData.toLanguage}
@@ -267,6 +329,12 @@ const ResponseAnswer = () => {
         {error && <div className="error">{error}</div>}
         <button onClick={handleTranslateOrAnswer}>Submit</button>
       </form>
+
+      <div>
+        <h2>Speech Recognition</h2>
+        <button onClick={startListening}>Start Listening</button>
+        <button onClick={stopListening}>Stop Listening</button>
+      </div>
 
       {isLoading ? (
         <BeatLoader size={12} color={"red"} />
@@ -304,7 +372,6 @@ const ResponseAnswer = () => {
           </table>
         )
       )}
-    </div>
     </div>
   );
 };
