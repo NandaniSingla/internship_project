@@ -4,6 +4,12 @@ import { Link } from "react-router-dom";
 import { Configuration, OpenAIApi } from "openai";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { BeatLoader } from "react-spinners";
+import { createClient } from "@supabase/supabase-js";
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+
 
 const ResponseAnswer = () => {
   const [formData, setFormData] = useState({
@@ -84,6 +90,22 @@ const ResponseAnswer = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     setError("");
   };
+  const saveToSupabase = async (response) => {
+    try {
+      const { data, error } = await supabase
+        .from("responses") // Ensure this table exists in your Supabase database
+        .insert([response]);
+
+      if (error) {
+        console.error("Error saving response to Supabase:", error.message);
+      } else {
+        console.log("Response saved to Supabase:", data);
+      }
+    } catch (err) {
+      console.error("Error interacting with Supabase:", err.message);
+    }
+  };
+
 
   const translateOrAnswer = async (model, message, toLang) => {
     try {
@@ -202,9 +224,16 @@ const ResponseAnswer = () => {
         response: results[i]?.response,
         rating: null,
         rank: null,
+        message,
+        to_language: formData.inputType === "translation" ? toLanguage : null,
       }));
 
+
+      // }));
+
       setResponses(formattedResponses);
+     // Save all responses to Supabase
+     formattedResponses.forEach((response) => saveToSupabase(response));
     } catch (error) {
       console.error("Error processing request:", error.message);
       setError("An error occurred while processing your request.");
@@ -212,6 +241,7 @@ const ResponseAnswer = () => {
       setIsLoading(false);
     }
   };
+
 
   const startListening = () => {
     if (recognition) {

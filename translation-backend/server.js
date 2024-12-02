@@ -60,17 +60,17 @@ app.get("/api/translations", async (req, res) => {
 
 // Endpoint to save a compare translation
 app.post("/api/compareTranslate", async (req, res) => {
-  const { original_message, translated_message, language, model, score } = req.body;
+  const { original_message, translated_message, model, score } = req.body;
 
   // Validate input
-  if (!original_message || !translated_message || !language || !model || typeof score !== 'number') {
+  if (!original_message || !translated_message || !model || typeof score !== "number") {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
   try {
     const { data, error } = await supabase
-      .from("compareTranslate") // Ensure this table exists
-      .insert([{ original_message, translated_message, language, model, score }]);
+      .from("compare_translations") // Updated table name
+      .insert([{ original_message, translated_message, model, score }]);
 
     if (error) {
       return res.status(400).json({ error: error.message });
@@ -86,9 +86,9 @@ app.post("/api/compareTranslate", async (req, res) => {
 app.get("/api/compare-translations", async (req, res) => {
   try {
     const { data, error } = await supabase
-      .from("compareTranslate")
+      .from("compare_translations") // Updated table name
       .select("*")
-      .order("created_at", { ascending: false })
+      .order("created_at", { ascending: false }) // Ensure created_at exists in the table schema
       .limit(5);
 
     if (error) {
@@ -100,36 +100,48 @@ app.get("/api/compare-translations", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
-// Endpoint to use Assembly for translation or Q&A
-app.post("/api/assembly", async (req, res) => {
-  const { prompt, model } = req.body;
+
+// Endpoint to save a response
+app.post("/api/responses", async (req, res) => {
+  const { model, type, response, rating, rank, message, to_language } = req.body;
 
   // Validate input
-  if (!prompt || !model) {
+  if (!model || !type || !response || !message) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
   try {
-    const response = await fetch("https://cors-anywhere.herokuapp.com/https://api.assemblyai.com/v2/translate", { // Use the correct endpoint
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.ASSEMBLY_API_KEY}` // Use your Assembly API key
-      },
-      body: JSON.stringify({
-        prompt:prompt,
-        
-      })
-    });
+    const { data, error } = await supabase
+      .from("responses")
+      .insert([{ model, type, response, rating, rank, message, to_language }]);
 
-    const data = await response.json();
-    if (response.ok) {
-      res.status(200).json(data); // Adjust based on the actual API response structure
-    } else {
-      res.status(400).json({ error: data.error || "Error from Assembly API" });
+    if (error) {
+      return res.status(400).json({ error: error.message });
     }
+
+    res.status(201).json(data);
   } catch (error) {
-    console.error("Error with Assembly API:", error);
+    console.error("Error saving response:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Endpoint to fetch previous responses
+app.get("/api/responses", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("responses")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(10);
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    res.status(200).json(data);
+  } catch (error) {
+    console.error("Error fetching responses:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
