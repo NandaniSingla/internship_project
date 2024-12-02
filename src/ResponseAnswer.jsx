@@ -84,7 +84,6 @@ const ResponseAnswer = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     setError("");
   };
-
   const translateOrAnswer = async (model, message, toLang) => {
     try {
       if (model === "deepl") {
@@ -92,7 +91,6 @@ const ResponseAnswer = () => {
         if (!targetLangCode) {
           return { type: "error", response: `Unsupported language for DeepL: ${toLang}` };
         }
-
         const response = await fetch("https://api-free.deepl.com/v2/translate", {
           method: "POST",
           headers: {
@@ -105,19 +103,15 @@ const ResponseAnswer = () => {
             target_lang: targetLangCode,
           }),
         });
-
         const data = await response.json();
         if (!response.ok || !data.translations) {
           return { type: "error", response: `DeepL API Error: ${data.message || "Unknown error"}` };
         }
-
         return { type: "translation", response: data.translations[0]?.text || "No response" };
       }
-
       if (model === "assembly") {
         const proxyUrl = "https://cors-anywhere.herokuapp.com/";
         const assemblyApiUrl = `${proxyUrl}https://api.assemblyai.com/v2/translate`;
-
         const response = await fetch(assemblyApiUrl, {
           method: "POST",
           headers: {
@@ -130,38 +124,31 @@ const ResponseAnswer = () => {
               : `Answer the question: "${message}"`,
           }),
         });
-
         const data = await response.json();
         if (!response.ok) {
           return { type: "error", response: `Assembly API Error: ${data.error || "Unknown error"}` };
         }
-
         return { type: formData.inputType, response: data.response };
       }
-
       const prompt =
         formData.inputType === "translation"
           ? `Translate the text: "${message}" into ${toLang}`
           : `Answer the question: "${message}"`;
-
       if (model.startsWith("gemini")) {
         const genAIModel = googleGenAI.getGenerativeModel({ model });
         const result = await genAIModel.generateContent(prompt);
         return { type: formData.inputType, response: result.response.text() };
       }
-
       if (model.startsWith("gpt")) {
         const response = await openai.createChatCompletion({
           model,
           messages: [{ role: "user", content: prompt }],
         });
-
         return {
           type: formData.inputType,
           response: response.data.choices[0].message.content.trim(),
         };
       }
-
       return { type: "error", response: "Unsupported model" };
     } catch (error) {
       console.error(`Error with ${model}:`, error.message);
@@ -172,10 +159,8 @@ const ResponseAnswer = () => {
   const handleRatingChange = (index, value) => {
     const updatedResponses = [...responses];
     updatedResponses[index].rating = parseInt(value, 10) || null;
-
     const rankedResponses = [...updatedResponses].sort((a, b) => (b.rating || 0) - (a.rating || 0));
     rankedResponses.forEach((res, idx) => (res.rank = idx + 1));
-
     setResponses(rankedResponses);
   };
 
@@ -265,7 +250,6 @@ const ResponseAnswer = () => {
           value={formData.message}
           onChange={handleInputChange}
         ></textarea>
-
         {formData.inputType === "translation" && (
           <select
             name="toLanguage"
