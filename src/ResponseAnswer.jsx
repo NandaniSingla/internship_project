@@ -5,6 +5,7 @@ import { Configuration, OpenAIApi } from "openai";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { BeatLoader } from "react-spinners";
 import { createClient } from "@supabase/supabase-js";
+
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -21,6 +22,8 @@ const ResponseAnswer = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [recognition, setRecognition] = useState(null);
+  const [performanceAnalysis, setPerformanceAnalysis] = useState({});
+  const [averageScores, setAverageScores] = useState({});
 
   const googleGenAI = new GoogleGenerativeAI(import.meta.env.VITE_GOOGLE_API_KEY);
   const configuration = new Configuration({
@@ -61,6 +64,46 @@ const ResponseAnswer = () => {
     "Slovenian": "SL", "Spanish": "ES", "Swedish": "SV", "Thai": "TH",
     "Turkish": "TR", "Ukrainian": "UK", "Vietnamese": "VI",
   };
+  const analyzePerformance = () => {
+    const analysis = {};
+    const averages = {};
+
+    responses.forEach((response) => {
+      const { model, type, rating } = response;
+
+      // Initialize model analysis
+      if (!analysis[model]) {
+        analysis[model] = { totalRating: 0, count: 0, typeCounts: { translation: 0, question: 0 } };
+      }
+
+      // Update total rating and count
+      analysis[model].totalRating += rating;
+      analysis[model].count += 1;
+
+      // Count types
+      analysis[model].typeCounts[type] = (analysis[model].typeCounts[type] || 0) + 1;
+    });
+
+    // Calculate average scores and identify top-performing models
+    for (const model in analysis) {
+      const { totalRating, count, typeCounts } = analysis[model];
+      averages[model] = totalRating / count; // Average rating
+      const topType = typeCounts.translation > typeCounts.question ? "translation" : "question";
+      analysis[model].topType = topType; // Identify top type
+    }
+
+    setPerformanceAnalysis(analysis);
+    setAverageScores(averages);
+  };
+
+  useEffect(() => {
+    if (responses.length > 0) {
+      analyzePerformance();
+    }
+  }, [responses]);
+
+ 
+  
 
   useEffect(() => {
     if (window.SpeechRecognition || window.webkitSpeechRecognition) {
@@ -90,23 +133,39 @@ const ResponseAnswer = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     setError("");
   };
-  const saveToSupabase = async (response) => {
+  const saveToSupabase = async (response, index) => {
     try {
       const { data, error } = await supabase
-        .from("responses") // Ensure this table exists in your Supabase database
-        .insert([response]);
-
+        .from("responses")
+        .insert([{
+          model: response.model,
+          type: response.type,
+          response: response.response,
+          rating: response.rating || 0,
+          rank: response.rank || 0,
+          message: response.message,
+          to_language: response.to_language || null,
+          created_at: new Date().toISOString(),
+        }])
+        .select("id");
+  
       if (error) {
         console.error("Error saving response to Supabase:", error.message);
+      } else if (data && data[0]?.id) {
+        console.log(`Saved response ID for model ${response.model}:`, data[0].id);
+        setResponses((prevResponses) => {
+          const updatedResponses = [...prevResponses];
+          updatedResponses[index].id = data[0].id; // Ensure every response gets its ID
+          return updatedResponses;
+        });
       } else {
-        console.log("Response saved to Supabase:", data);
+        console.error(`No ID returned for model ${response.model}`);
       }
     } catch (err) {
       console.error("Error interacting with Supabase:", err.message);
     }
   };
-
-
+  
   const translateOrAnswer = async (model, message, toLang) => {
     try {
       if (model === "deepl") {
@@ -190,50 +249,92 @@ const ResponseAnswer = () => {
       return { type: "error", response: `Error with ${model}: ${error.message}` };
     }
   };
-
-  const handleRatingChange = (index, value) => {
+  const handleRatingChange = async (index, value) => {
+    const newRating = parseInt(value, 10);
+  
+    if (isNaN(newRating)) {
+      console.error("Invalid rating value provided.");
+      setError("Invalid rating value.");
+      return;
+    }
+  
+    // Update the rating for the specific response
     const updatedResponses = [...responses];
-    updatedResponses[index].rating = parseInt(value, 10) || null;
-
-    const rankedResponses = [...updatedResponses].sort((a, b) => (b.rating || 0) - (a.rating || 0));
-    rankedResponses.forEach((res, idx) => (res.rank = idx + 1));
-
+    updatedResponses[index].rating = newRating;
+  
+    // Sort responses by rating in descending order and assign ranks
+    const rankedResponses = updatedResponses
+      .slice() // Create a shallow copy for sorting
+      .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+      .map((res, idx) => ({
+        ...res,
+        rank: idx + 1, // Assign rank based on sorted position
+      }));
+  
     setResponses(rankedResponses);
+  
+    // Update the rank and rating in the database
+    const updatedResponse = rankedResponses.find((res) => res.model === updatedResponses[index].model);
+    if (!updatedResponse || !updatedResponse.id) {
+      console.error("Missing response ID for update.");
+      return;
+    }
+  
+    try {
+      const { data, error } = await supabase
+        .from("responses")
+        .update({
+          rating: updatedResponse.rating,
+          rank: updatedResponse.rank,
+        })
+        .eq("id", updatedResponse.id);
+  
+      if (error) {
+        console.error(`Failed to update rating and rank for ${updatedResponse.model}:`, error.message);
+      } else {
+        console.log(`Successfully updated rating and rank for ${updatedResponse.model}:`, data);
+      }
+    } catch (err) {
+      console.error("Error updating response in database:", err.message);
+    }
   };
-
+  
+  
+  
   const handleTranslateOrAnswer = async () => {
     const { inputType, toLanguage, message } = formData;
-
+  
     if (!message || (inputType === "translation" && !toLanguage)) {
       setError("Please fill in all fields.");
       return;
     }
-
+  
     setError("");
     setIsLoading(true);
     setResponses([]);
-
+  
     try {
       const results = await Promise.all(
         models.map((m) => translateOrAnswer(m, message, toLanguage))
       );
-
+  
+      // Calculate initial ranks
       const formattedResponses = models.map((m, i) => ({
         model: m,
         type: results[i]?.type,
         response: results[i]?.response,
-        rating: null,
-        rank: null,
+        rating: 0,
+        rank: i + 1, // Default rank based on initial order
         message,
         to_language: formData.inputType === "translation" ? toLanguage : null,
       }));
-
-
-      // }));
-
+  
       setResponses(formattedResponses);
-     // Save all responses to Supabase
-     formattedResponses.forEach((response) => saveToSupabase(response));
+  
+      // Save all responses to Supabase
+      await Promise.all(
+        formattedResponses.map((response, index) => saveToSupabase(response, index))
+      );
     } catch (error) {
       console.error("Error processing request:", error.message);
       setError("An error occurred while processing your request.");
@@ -242,7 +343,75 @@ const ResponseAnswer = () => {
     }
   };
 
+  const calculateAverageRatings = (data) => {
+    const modelRatings = {};
+    data.forEach(item => {
+      if (!modelRatings[item.model]) {
+        modelRatings[item.model] = { totalRating: 0, count: 0 };
+      }
+      modelRatings[item.model].totalRating += item.rating;
+      modelRatings[item.model].count += 1;
+    });
+  
+    // Calculate average for each model
+    const averageRatings = Object.keys(modelRatings).map(model => ({
+      model,
+      averageRating: (modelRatings[model].totalRating / modelRatings[model].count).toFixed(2)
+    }));
+  
+    return averageRatings;
+  };
+  const identifyTopPerformingModels = (data) => {
+    const modelRatings = calculateAverageRatings(data);
+    return modelRatings.sort((a, b) => b.averageRating - a.averageRating);
+  };
 
+  const fetchResponsesFromSupabase = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('responses')
+        .select('*');
+  
+      if (error) {
+        throw error;
+      }
+  
+      return data;
+    } catch (error) {
+      console.error('Error fetching data from Supabase:', error);
+      return [];
+    }
+  };
+  // Function to convert data to CSV format
+const convertToCSV = (data) => {
+  const header = ["Model", "Average Rating"];
+  const rows = data.map(item => [item.model, item.averageRating]);
+
+  const csvContent = [header, ...rows].map(e => e.join(",")).join("\n");
+  return csvContent;
+};
+
+// Function to download the CSV file
+const downloadCSV = async () => {
+  try {
+    const responses = await fetchResponsesFromSupabase(); // Assume this function fetches your data from Supabase
+    const topPerformingModels = identifyTopPerformingModels(responses);
+    const csvContent = convertToCSV(topPerformingModels);
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "top_performing_models.csv"; // Specify the filename
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url); // Clean up URL object
+  } catch (error) {
+    console.error("Error exporting CSV:", error);
+  }
+};
+  
   const startListening = () => {
     if (recognition) {
       recognition.start();
@@ -255,12 +424,13 @@ const ResponseAnswer = () => {
     }
   };
 
+  
   return (
     <div className="container">
       <Link to="/" className="back-link">Back to Translation</Link>
-
+  
       <h1>AI Translation & QA App</h1>
-
+  
       <form onSubmit={(e) => e.preventDefault()}>
         <div className="input-type">
           <label>
@@ -284,7 +454,7 @@ const ResponseAnswer = () => {
             Question
           </label>
         </div>
-
+  
         <textarea
           name="message"
           placeholder={
@@ -295,7 +465,7 @@ const ResponseAnswer = () => {
           value={formData.message}
           onChange={handleInputChange}
         ></textarea>
-
+  
         {formData.inputType === "translation" && (
           <select
             name="toLanguage"
@@ -309,55 +479,90 @@ const ResponseAnswer = () => {
             ))}
           </select>
         )}
-
+  
         {error && <div className="error">{error}</div>}
         <button onClick={handleTranslateOrAnswer}>Submit</button>
       </form>
 
+      <div className="container">
+      {/* Other JSX content */}
+      <button onClick={downloadCSV} className="export-btn">
+        Export Responses to CSV
+      </button>
+      {/* Other JSX content */}
+    </div>
       <div>
         <h2>Speech Recognition</h2>
         <button onClick={startListening}>Start Listening</button>
         <button onClick={stopListening}>Stop Listening</button>
       </div>
-
+  
       {isLoading ? (
         <BeatLoader size={12} color={"red"} />
       ) : (
         responses.length > 0 && (
-          <table className="response-table">
-            <thead>
-              <tr>
-                <th>Model</th>
-                <th>Type</th>
-                <th>Response</th>
-                <th>Rating (1-10)</th>
-                <th>Rank</th>
-              </tr>
-            </thead>
-            <tbody>
-              {responses.map((response, index) => (
-                <tr key={index}>
-                  <td>{response.model}</td>
-                  <td>{response.type}</td>
-                  <td>{response.response}</td>
-                  <td>
-                    <input
-                      type="number"
-                      min="1"
-                      max="10"
-                      value={response.rating || ""}
-                      onChange={(e) => handleRatingChange(index, e.target.value)}
-                    />
-                  </td>
-                  <td>{response.rank || "N/A"}</td>
+          <div>
+            <table className="response-table">
+              <thead>
+                <tr>
+                  <th>Model</th>
+                  <th>Type</th>
+                  <th>Response</th>
+                  <th>Rating (1-10)</th>
+                  <th>Rank</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {responses.map((response, index) => (
+                  <tr key={index}>
+                    <td>{response.model}</td>
+                    <td>{response.type}</td>
+                    <td>{response.response}</td>
+                    <td>
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={response.rating || ""}
+                        onChange={(e) => handleRatingChange(index, e.target.value)}
+                      />
+                    </td>
+                    <td>{response.rank || "N/A"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+  
+            {/* Performance Analysis Section */}
+            <div className="performance-analysis">
+              <h2>Performance Analysis</h2>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Model</th>
+                    <th>Average Score</th>
+                    <th>Top Type</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.keys(averageScores).map((model) => (
+                    <tr key={model}>
+                      <td>{model}</td>
+                      <td>{averageScores[model].toFixed(2)}</td>
+                      <td>{performanceAnalysis[model]?.topType}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )
       )}
     </div>
-  );
-};
+  )};
+
+    
+      
+ 
 
 export default ResponseAnswer;
