@@ -5,7 +5,6 @@ import { Configuration, OpenAIApi } from "openai";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { BeatLoader } from "react-spinners";
 import { createClient } from "@supabase/supabase-js";
-
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -40,7 +39,6 @@ const ResponseAnswer = () => {
     "gemini-1.5-flash-002",
     "gemini-1.5-pro-002",
     "deepl",
-    "assembly",
   ];
 
   const supportedLanguages = {
@@ -67,23 +65,18 @@ const ResponseAnswer = () => {
   const analyzePerformance = () => {
     const analysis = {};
     const averages = {};
-
     responses.forEach((response) => {
       const { model, type, rating } = response;
-
       // Initialize model analysis
       if (!analysis[model]) {
         analysis[model] = { totalRating: 0, count: 0, typeCounts: { translation: 0, question: 0 } };
       }
-
       // Update total rating and count
       analysis[model].totalRating += rating;
       analysis[model].count += 1;
-
       // Count types
       analysis[model].typeCounts[type] = (analysis[model].typeCounts[type] || 0) + 1;
     });
-
     // Calculate average scores and identify top-performing models
     for (const model in analysis) {
       const { totalRating, count, typeCounts } = analysis[model];
@@ -91,7 +84,6 @@ const ResponseAnswer = () => {
       const topType = typeCounts.translation > typeCounts.question ? "translation" : "question";
       analysis[model].topType = topType; // Identify top type
     }
-
     setPerformanceAnalysis(analysis);
     setAverageScores(averages);
   };
@@ -101,33 +93,6 @@ const ResponseAnswer = () => {
       analyzePerformance();
     }
   }, [responses]);
-
- 
-  
-
-  useEffect(() => {
-    if (window.SpeechRecognition || window.webkitSpeechRecognition) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const recognitionInstance = new SpeechRecognition();
-      recognitionInstance.interimResults = false;
-      recognitionInstance.lang = "en-US";
-
-      recognitionInstance.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        setFormData({ ...formData, message: transcript });
-      };
-
-      recognitionInstance.onerror = (event) => {
-        console.error("Speech recognition error:", event.error);
-        setError("Error recognizing speech. Please try again.");
-      };
-
-      setRecognition(recognitionInstance);
-    } else {
-      console.error("Speech recognition not supported in this browser.");
-      setError("Speech recognition is not supported in this browser.");
-    }
-  }, []);
 
   const handleInputChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -148,7 +113,7 @@ const ResponseAnswer = () => {
           created_at: new Date().toISOString(),
         }])
         .select("id");
-  
+
       if (error) {
         console.error("Error saving response to Supabase:", error.message);
       } else if (data && data[0]?.id) {
@@ -165,7 +130,7 @@ const ResponseAnswer = () => {
       console.error("Error interacting with Supabase:", err.message);
     }
   };
-  
+
   const translateOrAnswer = async (model, message, toLang) => {
     try {
       if (model === "deepl") {
@@ -193,31 +158,6 @@ const ResponseAnswer = () => {
         }
 
         return { type: "translation", response: data.translations[0]?.text || "No response" };
-      }
-
-      if (model === "assembly") {
-        const proxyUrl = "https://cors-anywhere.herokuapp.com/";
-        const assemblyApiUrl = `${proxyUrl}https://api.assemblyai.com/v2/translate`;
-
-        const response = await fetch(assemblyApiUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${import.meta.env.VITE_ASSEMBLY_API_KEY}`,
-          },
-          body: JSON.stringify({
-            prompt: formData.inputType === "translation"
-              ? `Translate the text: "${message}" into ${toLang}`
-              : `Answer the question: "${message}"`,
-          }),
-        });
-
-        const data = await response.json();
-        if (!response.ok) {
-          return { type: "error", response: `Assembly API Error: ${data.error || "Unknown error"}` };
-        }
-
-        return { type: formData.inputType, response: data.response };
       }
 
       const prompt =
@@ -251,17 +191,17 @@ const ResponseAnswer = () => {
   };
   const handleRatingChange = async (index, value) => {
     const newRating = parseInt(value, 10);
-  
+
     if (isNaN(newRating)) {
       console.error("Invalid rating value provided.");
       setError("Invalid rating value.");
       return;
     }
-  
+
     // Update the rating for the specific response
     const updatedResponses = [...responses];
     updatedResponses[index].rating = newRating;
-  
+
     // Sort responses by rating in descending order and assign ranks
     const rankedResponses = updatedResponses
       .slice() // Create a shallow copy for sorting
@@ -270,16 +210,16 @@ const ResponseAnswer = () => {
         ...res,
         rank: idx + 1, // Assign rank based on sorted position
       }));
-  
+
     setResponses(rankedResponses);
-  
+
     // Update the rank and rating in the database
     const updatedResponse = rankedResponses.find((res) => res.model === updatedResponses[index].model);
     if (!updatedResponse || !updatedResponse.id) {
       console.error("Missing response ID for update.");
       return;
     }
-  
+
     try {
       const { data, error } = await supabase
         .from("responses")
@@ -288,7 +228,7 @@ const ResponseAnswer = () => {
           rank: updatedResponse.rank,
         })
         .eq("id", updatedResponse.id);
-  
+
       if (error) {
         console.error(`Failed to update rating and rank for ${updatedResponse.model}:`, error.message);
       } else {
@@ -298,26 +238,23 @@ const ResponseAnswer = () => {
       console.error("Error updating response in database:", err.message);
     }
   };
-  
-  
-  
   const handleTranslateOrAnswer = async () => {
     const { inputType, toLanguage, message } = formData;
-  
+
     if (!message || (inputType === "translation" && !toLanguage)) {
       setError("Please fill in all fields.");
       return;
     }
-  
+
     setError("");
     setIsLoading(true);
     setResponses([]);
-  
+
     try {
       const results = await Promise.all(
         models.map((m) => translateOrAnswer(m, message, toLanguage))
       );
-  
+
       // Calculate initial ranks
       const formattedResponses = models.map((m, i) => ({
         model: m,
@@ -328,9 +265,9 @@ const ResponseAnswer = () => {
         message,
         to_language: formData.inputType === "translation" ? toLanguage : null,
       }));
-  
+
       setResponses(formattedResponses);
-  
+
       // Save all responses to Supabase
       await Promise.all(
         formattedResponses.map((response, index) => saveToSupabase(response, index))
@@ -342,7 +279,6 @@ const ResponseAnswer = () => {
       setIsLoading(false);
     }
   };
-
   const calculateAverageRatings = (data) => {
     const modelRatings = {};
     data.forEach(item => {
@@ -352,7 +288,7 @@ const ResponseAnswer = () => {
       modelRatings[item.model].totalRating += item.rating;
       modelRatings[item.model].count += 1;
     });
-  
+
     // Calculate average for each model
     const averageRatings = Object.keys(modelRatings).map(model => ({
       model,
@@ -386,7 +322,6 @@ const ResponseAnswer = () => {
 const convertToCSV = (data) => {
   const header = ["Model", "Average Rating"];
   const rows = data.map(item => [item.model, item.averageRating]);
-
   const csvContent = [header, ...rows].map(e => e.join(",")).join("\n");
   return csvContent;
 };
@@ -397,7 +332,6 @@ const downloadCSV = async () => {
     const responses = await fetchResponsesFromSupabase(); // Assume this function fetches your data from Supabase
     const topPerformingModels = identifyTopPerformingModels(responses);
     const csvContent = convertToCSV(topPerformingModels);
-
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -411,49 +345,35 @@ const downloadCSV = async () => {
     console.error("Error exporting CSV:", error);
   }
 };
-  
-  const startListening = () => {
-    if (recognition) {
-      recognition.start();
-    }
-  };
-
-  const stopListening = () => {
-    if (recognition) {
-      recognition.stop();
-    }
-  };
-
-  
   return (
     <div className="container">
       <Link to="/" className="back-link">Back to Translation</Link>
   
       <h1>AI Translation & QA App</h1>
-  
       <form onSubmit={(e) => e.preventDefault()}>
-        <div className="input-type">
-          <label>
-            <input
-              type="radio"
-              name="inputType"
-              value="translation"
-              checked={formData.inputType === "translation"}
-              onChange={handleInputChange}
-            />
-            Translation
-          </label>
-          <label>
-            <input
-              type="radio"
-              name="inputType"
-              value="question"
-              checked={formData.inputType === "question"}
-              onChange={handleInputChange}
-            />
-            Question
-          </label>
-        </div>
+  <div className="input-type">
+    <label className="label-radio">
+      <input
+        type="radio"
+        name="inputType"
+        value="translation"
+        checked={formData.inputType === "translation"}
+        onChange={handleInputChange}
+      />
+      Translation
+    </label>
+    <label className="label-radio">
+      <input
+        type="radio"
+        name="inputType"
+        value="question"
+        checked={formData.inputType === "question"}
+        onChange={handleInputChange}
+      />
+      Question
+    </label>
+  </div>
+
   
         <textarea
           name="message"
@@ -485,18 +405,12 @@ const downloadCSV = async () => {
       </form>
 
       <div className="container">
-      {/* Other JSX content */}
+      
       <button onClick={downloadCSV} className="export-btn">
         Export Responses to CSV
       </button>
-      {/* Other JSX content */}
+      
     </div>
-      <div>
-        <h2>Speech Recognition</h2>
-        <button onClick={startListening}>Start Listening</button>
-        <button onClick={stopListening}>Stop Listening</button>
-      </div>
-  
       {isLoading ? (
         <BeatLoader size={12} color={"red"} />
       ) : (
@@ -562,7 +476,4 @@ const downloadCSV = async () => {
   )};
 
     
-      
- 
-
 export default ResponseAnswer;
